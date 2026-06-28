@@ -1,0 +1,22 @@
+# API Keys / secrets
+.env
+*.env
+stage1_minimal_agent/.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+
+# system files
+.DS_Store
+Thumbs.db
