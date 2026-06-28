@@ -20,3 +20,4 @@ env/
 # system files
 .DS_Store
 Thumbs.db
+stage2_rag_memory_agent/data/index/*.json
