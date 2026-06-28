@@ -245,14 +245,16 @@ def call_function(name: str, arguments: dict) -> str:
 # =========================
 
 def run_agent(user_input: str) -> str:
-    messages = [{
-    "role": "system",
-    "content": (
-        "你是一个可以使用工具的 Agent。"
-        "当问题需要最新信息或外部资料时，调用 search 工具；"
-        "当问题需要数学计算时，调用 calculator 工具；"
-        "当用户要求读取 workspace 目录下的文件时，调用 read_file 工具。"
-    ),
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是一个可以使用工具的 Agent。"
+                "当问题需要最新信息或外部资料时，调用 search 工具；"
+                "当问题需要数学计算时，调用 calculator 工具；"
+                "当用户要求读取 workspace 目录下的文件时，调用 read_file 工具。"
+                "工具返回结果后，请基于工具结果直接给出最终回答，不要重复调用同一个工具。"
+            ),
         },
         {
             "role": "user",
@@ -260,57 +262,52 @@ def run_agent(user_input: str) -> str:
         },
     ]
 
-    # 第一次请求模型：让模型判断是否需要调用工具
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=messages,
-        tools=tools,
-        tool_choice="auto",
-    )
+    max_rounds = 5
 
-    assistant_message = response.choices[0].message
-
-    # 如果模型没有调用工具，直接返回回答
-    if not assistant_message.tool_calls:
-        return assistant_message.content
-
-    # 把 assistant 的 tool_call 消息加入 messages
-    messages.append(assistant_message)
-
-    # 执行所有工具调用
-    for tool_call in assistant_message.tool_calls:
-        function_name = tool_call.function.name
-
-        # tool_call.function.arguments 是 JSON 字符串
-        function_args = json.loads(tool_call.function.arguments)
-
-        print("\n模型决定调用工具：")
-        print("工具名：", function_name)
-        print("参数：", function_args)
-
-        # Python 真正执行工具
-        function_result = call_function(function_name, function_args)
-
-        print("\n工具执行结果：")
-        print(function_result[:500])
-        print("...")
-
-        # 把工具结果返回给模型
-        messages.append(
-            {
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": function_result,
-            }
+    for round_index in range(max_rounds):
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
         )
 
-    # 第二次请求模型：让模型根据工具结果生成最终回答
-    final_response = client.chat.completions.create(
-        model=MODEL,
-        messages=messages,
-    )
+        assistant_message = response.choices[0].message
 
-    return final_response.choices[0].message.content
+        # 如果模型没有调用工具，说明可以直接回答
+        if not assistant_message.tool_calls:
+            if assistant_message.content:
+                return assistant_message.content
+            else:
+                return "模型没有返回有效内容。"
+
+        # 如果模型调用了工具，把 assistant 的 tool_call 消息加入 messages
+        messages.append(assistant_message)
+
+        # 执行模型要求调用的所有工具
+        for tool_call in assistant_message.tool_calls:
+            function_name = tool_call.function.name
+            function_args = json.loads(tool_call.function.arguments)
+
+            print("\n模型决定调用工具：")
+            print("工具名：", function_name)
+            print("参数：", function_args)
+
+            function_result = call_function(function_name, function_args)
+
+            print("\n工具执行结果：")
+            print(function_result[:500])
+            print("...")
+
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": function_result,
+                }
+            )
+
+    return "工具调用轮次过多，已停止。"
 
 
 # =========================
