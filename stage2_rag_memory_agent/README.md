@@ -24,7 +24,9 @@
 
 \- `07\_memory\_rag\_agent.py`：整合 RAG 和 Memory
 
-
+- `08_embedding_retriever.py`：使用 embedding 相似度进行语义检索
+- `09_rag_with_citations.py`：基于 embedding 检索生成带引用来源的 RAG 回答
+- `10_toolified_rag_agent.py`：将 RAG 和 Memory 包装成工具，由 Agent 选择调用
 
 \## 核心流程
 
