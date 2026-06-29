@@ -28,7 +28,9 @@
 - `09_rag_with_citations.py`：基于 embedding 检索生成带引用来源的 RAG 回答
 - `10_toolified_rag_agent.py`：将 RAG 和 Memory 包装成工具，由 Agent 选择调用
 
-- `13_guarded_research_agent.py`：在 Research Agent 基础上增加工具失败、空结果、重复调用和幻觉引用检查。
+- `11_research_agent.py`：接入 Tavily Search，输入主题后搜索、总结并输出引用链接
+- `12_memory_types_agent.py`：演示短期上下文、会话记忆、长期记忆三种 memory
+- `13_guarded_research_agent.py`：在 Research Agent 基础上增加工具失败、空结果、重复调用和幻觉引用检查
 \## 核心流程
 
 
