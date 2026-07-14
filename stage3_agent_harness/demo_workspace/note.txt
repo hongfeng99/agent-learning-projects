@@ -1,0 +1,3 @@
+Stage3 的目标是学习 Agent Harness。
+Harness 负责管理工具、权限、状态、日志和上下文。
+模型负责决定做什么，Harness 负责决定能不能做、怎么做、怎么记录。

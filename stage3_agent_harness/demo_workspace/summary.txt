@@ -1,0 +1,1 @@
+文件 note.txt 的简要总结：Stage3 的目标是学习 Agent Harness。；Harness 负责管理工具、权限、状态、日志和上下文。
