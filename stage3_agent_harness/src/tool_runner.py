@@ -8,7 +8,10 @@ from src.trace_logger import TraceLogger
 
 def serialize_result(result: Any) -> str:
     """
-    将工具返回值转换成可以发给模型的字符串。
+    将工具返回值转换成字符串。
+
+    因为发送给模型的 tool message，
+    content 应当是字符串。
     """
 
     if isinstance(result, str):
@@ -27,16 +30,11 @@ def execute_tool_call(
     trace: TraceLogger | None = None,
 ) -> dict:
     """
-    执行模型产生的一次工具调用。
+    执行一次模型产生的工具调用。
 
-    流程：
-    1. 获取工具名称和原始参数
-    2. 解析 JSON 参数
-    3. 从注册表查找工具
-    4. 检查危险标记
-    5. 必要时请求用户授权
-    6. 执行 Python 函数
-    7. 返回执行结果
+    trace 是可选参数：
+    - 传入 TraceLogger：记录日志
+    - 不传入：仍可正常执行工具
     """
 
     tool_name = tool_call.function.name
@@ -44,6 +42,7 @@ def execute_tool_call(
         tool_call.function.arguments or "{}"
     )
 
+    # 记录：模型请求了什么工具
     if trace:
         trace.log(
             "tool_requested",
@@ -54,7 +53,7 @@ def execute_tool_call(
             },
         )
 
-    # 将模型返回的 JSON 字符串转换成 Python 字典
+    # 模型返回的参数是 JSON 字符串
     try:
         arguments = json.loads(raw_arguments)
 
@@ -93,7 +92,7 @@ def execute_tool_call(
 
         raise ValueError(error_message)
 
-    # 查找工具注册信息
+    # 从注册表中找到工具
     try:
         tool_info = get_tool(tool_name)
 
@@ -132,6 +131,7 @@ def execute_tool_call(
                 },
             )
 
+        # 用户拒绝
         if not allowed:
             denied_content = (
                 f"工具 {tool_name} 未执行："
@@ -157,9 +157,10 @@ def execute_tool_call(
                 "content": denied_content,
             }
 
+    # 获取真正的 Python 函数
     tool_function = tool_info["function"]
 
-    # 真正执行 Python 工具
+    # 执行工具
     try:
         result = tool_function(**arguments)
         content = serialize_result(result)
@@ -179,6 +180,7 @@ def execute_tool_call(
 
         raise
 
+    # 记录工具成功结果
     if trace:
         trace.log(
             "tool_finished",

@@ -30,9 +30,11 @@ def run_agent(
     运行支持多轮工具调用的 Agent。
     """
 
+    # 每次运行创建一个新的 Trace 文件
     trace = TraceLogger()
 
-    print(f"\nTrace 文件：{trace.path}")
+    print("\nTrace 文件：")
+    print(trace.path)
 
     messages = [
         {
@@ -47,6 +49,7 @@ def run_agent(
 
     tools = get_tool_schemas()
 
+    # 记录整个 Agent 开始运行
     trace.log(
         "run_started",
         {
@@ -61,6 +64,7 @@ def run_agent(
             print(f"\n第 {step} 轮")
             print("=" * 50)
 
+            # 记录即将请求模型
             trace.log(
                 "model_requested",
                 {
@@ -69,8 +73,6 @@ def run_agent(
                 },
             )
 
-            # 请求模型决定：
-            # 调用工具，或者直接输出最终答案
             assistant_message = call_llm(
                 messages=messages,
                 tools=tools,
@@ -82,6 +84,7 @@ def run_agent(
                 )
             )
 
+            # 记录模型返回内容
             trace.log(
                 "model_responded",
                 {
@@ -99,10 +102,10 @@ def run_agent(
                 assistant_message.tool_calls,
             )
 
-            # 将模型消息保存到上下文
+            # 将模型消息加入上下文
             messages.append(assistant_data)
 
-            # 没有工具调用，说明任务完成
+            # 没有工具调用，说明模型给出了最终回答
             if not assistant_message.tool_calls:
                 final_answer = (
                     assistant_message.content
@@ -125,13 +128,12 @@ def run_agent(
                     },
                 )
 
-                print(
-                    f"\nTrace 已保存：{trace.path}"
-                )
+                print("\nTrace 已保存：")
+                print(trace.path)
 
                 return final_answer
 
-            # 模型可能在一轮内申请多个工具
+            # 执行本轮所有工具调用
             for tool_call in assistant_message.tool_calls:
                 tool_name = tool_call.function.name
 
@@ -159,8 +161,8 @@ def run_agent(
                     print(tool_content)
 
                 except Exception as error:
-                    # 工具异常不立即结束 Agent，
-                    # 而是把错误信息作为工具结果交还给模型
+                    # 工具失败后不立即终止 Agent，
+                    # 而是把错误交给模型
                     tool_content = (
                         f"工具 {tool_name} 执行失败："
                         f"{type(error).__name__}: {error}"
@@ -177,8 +179,7 @@ def run_agent(
                         },
                     )
 
-                # 无论成功、拒绝还是失败，
-                # 都要返回对应的 tool message
+                # 把工具结果加入 messages
                 messages.append(
                     {
                         "role": "tool",
@@ -187,7 +188,7 @@ def run_agent(
                     }
                 )
 
-        # for 循环正常结束，说明达到最大步数
+        # 超过最大轮数仍未完成
         raise RuntimeError(
             f"Agent 已达到最大步数 {max_steps}，"
             "但任务仍未完成。"
@@ -202,6 +203,7 @@ def run_agent(
             },
         )
 
-        print(f"\nTrace 已保存：{trace.path}")
+        print("\nTrace 已保存：")
+        print(trace.path)
 
         raise
