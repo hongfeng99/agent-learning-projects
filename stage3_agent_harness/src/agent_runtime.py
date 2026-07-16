@@ -1,6 +1,7 @@
 from src.llm_client import call_llm
 from src.tool_registry import get_tool_schemas
 from src.tool_runner import execute_tool_call
+from src.trace_logger import TraceLogger
 
 
 DEFAULT_MAX_STEPS = 8
@@ -20,22 +21,18 @@ SYSTEM_PROMPT = """
 6. 除非用户明确要求，否则不要写入或修改文件。
 """.strip()
 
+
 def run_agent(
     task: str,
     max_steps: int = DEFAULT_MAX_STEPS,
 ) -> str:
     """
-    运行一个支持多轮工具调用的 Agent。
-
-    每一轮流程：
-
-    1. 调用模型
-    2. 判断模型是否请求工具
-    3. 如果没有工具调用，返回最终答案
-    4. 如果有工具调用，执行工具
-    5. 把工具结果加入 messages
-    6. 进入下一轮
+    运行支持多轮工具调用的 Agent。
     """
+
+    trace = TraceLogger()
+
+    print(f"\nTrace 文件：{trace.path}")
 
     messages = [
         {
@@ -50,68 +47,161 @@ def run_agent(
 
     tools = get_tool_schemas()
 
-    for step in range(1, max_steps + 1):
-        print(f"\n第 {step} 轮")
-        print("=" * 50)
+    trace.log(
+        "run_started",
+        {
+            "task": task,
+            "max_steps": max_steps,
+            "tool_count": len(tools),
+        },
+    )
 
-        # 模型根据当前消息和工具结果，
-        # 决定是继续调用工具，还是直接回答
-        assistant_message = call_llm(
-            messages=messages,
-            tools=tools,
-        )
+    try:
+        for step in range(1, max_steps + 1):
+            print(f"\n第 {step} 轮")
+            print("=" * 50)
 
-        print("模型文本：", assistant_message.content)
-        print("工具调用：", assistant_message.tool_calls)
-
-        # 保存模型本轮消息
-        messages.append(
-            assistant_message.model_dump(
-                exclude_none=True
+            trace.log(
+                "model_requested",
+                {
+                    "agent_step": step,
+                    "message_count": len(messages),
+                },
             )
-        )
 
-        # 没有工具调用，说明模型认为任务已经完成
-        if not assistant_message.tool_calls:
-            return assistant_message.content or "模型没有返回最终内容。"
+            # 请求模型决定：
+            # 调用工具，或者直接输出最终答案
+            assistant_message = call_llm(
+                messages=messages,
+                tools=tools,
+            )
 
-        # 模型一次可能请求多个工具，所以需要遍历
-        for tool_call in assistant_message.tool_calls:
-            tool_name = tool_call.function.name
+            assistant_data = (
+                assistant_message.model_dump(
+                    exclude_none=True
+                )
+            )
 
-            print(f"\n准备执行工具：{tool_name}")
+            trace.log(
+                "model_responded",
+                {
+                    "agent_step": step,
+                    "message": assistant_data,
+                },
+            )
 
-            try:
-                execution = execute_tool_call(tool_call)
+            print(
+                "模型文本：",
+                assistant_message.content,
+            )
+            print(
+                "工具调用：",
+                assistant_message.tool_calls,
+            )
 
-                tool_content = execution["content"]
+            # 将模型消息保存到上下文
+            messages.append(assistant_data)
 
-                print("执行状态：", execution["status"])
-                print("工具参数：", execution["arguments"])
-                print("工具结果：")
-                print(tool_content)
-
-            except Exception as error:
-                # 暂时不让整个 Agent 直接退出，
-                # 而是把错误信息交给模型判断下一步
-                tool_content = (
-                    f"工具 {tool_name} 执行失败："
-                    f"{type(error).__name__}: {error}"
+            # 没有工具调用，说明任务完成
+            if not assistant_message.tool_calls:
+                final_answer = (
+                    assistant_message.content
+                    or "模型没有返回最终内容。"
                 )
 
-                print(tool_content)
+                trace.log(
+                    "final_answer",
+                    {
+                        "agent_step": step,
+                        "content": final_answer,
+                    },
+                )
 
-            # 工具成功或失败，都作为 tool message
-            # 返回给模型
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": tool_content,
-                }
-            )
+                trace.log(
+                    "run_finished",
+                    {
+                        "status": "success",
+                        "agent_steps": step,
+                    },
+                )
 
-    raise RuntimeError(
-        f"Agent 已达到最大步数 {max_steps}，"
-        "但任务仍未完成。"
-    )
+                print(
+                    f"\nTrace 已保存：{trace.path}"
+                )
+
+                return final_answer
+
+            # 模型可能在一轮内申请多个工具
+            for tool_call in assistant_message.tool_calls:
+                tool_name = tool_call.function.name
+
+                print(
+                    f"\n准备执行工具：{tool_name}"
+                )
+
+                try:
+                    execution = execute_tool_call(
+                        tool_call,
+                        trace=trace,
+                    )
+
+                    tool_content = execution["content"]
+
+                    print(
+                        "执行状态：",
+                        execution["status"],
+                    )
+                    print(
+                        "工具参数：",
+                        execution["arguments"],
+                    )
+                    print("工具结果：")
+                    print(tool_content)
+
+                except Exception as error:
+                    # 工具异常不立即结束 Agent，
+                    # 而是把错误信息作为工具结果交还给模型
+                    tool_content = (
+                        f"工具 {tool_name} 执行失败："
+                        f"{type(error).__name__}: {error}"
+                    )
+
+                    print(tool_content)
+
+                    trace.log(
+                        "tool_error_returned_to_model",
+                        {
+                            "tool_call_id": tool_call.id,
+                            "tool_name": tool_name,
+                            "content": tool_content,
+                        },
+                    )
+
+                # 无论成功、拒绝还是失败，
+                # 都要返回对应的 tool message
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": tool_content,
+                    }
+                )
+
+        # for 循环正常结束，说明达到最大步数
+        raise RuntimeError(
+            f"Agent 已达到最大步数 {max_steps}，"
+            "但任务仍未完成。"
+        )
+
+    except Exception as error:
+        trace.log(
+            "run_failed",
+            {
+                "error_type": type(error).__name__,
+                "error": str(error),
+            },
+        )
+
+        print(f"\nTrace 已保存：{trace.path}")
+
+        raise
