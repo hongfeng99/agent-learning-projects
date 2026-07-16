@@ -12,6 +12,9 @@ class TraceLogger:
         self.path = TRACE_DIR / trace_name
         self.step = 0
 
+        # 每次新建 TraceLogger 时清空旧 trace，避免多次运行结果混在一起
+        self.path.write_text("", encoding="utf-8")
+
     def log(self, event_type: str, data: dict):
         self.step += 1
 
