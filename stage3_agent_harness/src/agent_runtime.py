@@ -15,10 +15,10 @@ SYSTEM_PROMPT = """
 1. 涉及工作区真实文件时，必须调用工具，不要猜测。
 2. 根据前一步工具结果决定下一步操作。
 3. 工具失败时，阅读错误信息并决定如何处理。
-4. 任务完成后，用中文给出简洁、明确的最终回答。
-5. 除非用户明确要求，否则不要写入或修改文件。
+4. 如果工具结果表明用户拒绝授权，不要重复申请同一个操作。
+5. 任务完成后，用中文给出简洁、明确的最终回答。
+6. 除非用户明确要求，否则不要写入或修改文件。
 """.strip()
-
 
 def run_agent(
     task: str,
@@ -86,6 +86,7 @@ def run_agent(
 
                 tool_content = execution["content"]
 
+                print("执行状态：", execution["status"])
                 print("工具参数：", execution["arguments"])
                 print("工具结果：")
                 print(tool_content)

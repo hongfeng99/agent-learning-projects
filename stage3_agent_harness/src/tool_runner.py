@@ -1,15 +1,13 @@
 import json
 from typing import Any
 
+from src.permission import request_permission
 from src.tool_registry import get_tool
 
 
 def serialize_result(result: Any) -> str:
     """
-    将工具执行结果转换为字符串。
-
-    后续把工具结果返回给模型时，
-    tool message 的 content 必须是字符串。
+    将工具返回值转换成可以发给模型的字符串。
     """
 
     if isinstance(result, str):
@@ -26,22 +24,19 @@ def execute_tool_call(tool_call) -> dict:
     """
     执行模型产生的一次工具调用。
 
-    参数 tool_call 是模型返回的工具调用对象，例如：
-
-    ChatCompletionMessageFunctionToolCall(
-        id="call_xxx",
-        function=Function(
-            name="list_files",
-            arguments="{}"
-        )
-    )
+    执行流程：
+    1. 读取工具名称
+    2. 解析工具参数
+    3. 从注册表查找工具
+    4. 检查是否属于危险工具
+    5. 必要时请求用户授权
+    6. 执行真正的 Python 函数
     """
 
     tool_name = tool_call.function.name
-    raw_arguments = tool_call.function.arguments
+    raw_arguments = tool_call.function.arguments or "{}"
 
-    # 模型返回的 arguments 是 JSON 字符串，
-    # 需要转换成 Python 字典
+    # 模型返回的 arguments 是 JSON 字符串
     try:
         arguments = json.loads(raw_arguments)
     except json.JSONDecodeError as error:
@@ -55,16 +50,41 @@ def execute_tool_call(tool_call) -> dict:
             f"工具 {tool_name} 的参数必须是 JSON 对象"
         )
 
-    # 从 Tool Registry 中查找工具信息
+    # 获取工具注册信息
     tool_info = get_tool(tool_name)
 
-    # 取出真正的 Python 函数对象
+    dangerous = tool_info.get("dangerous", False)
+
+    # 危险工具执行前请求权限
+    if dangerous:
+        allowed = request_permission(
+            tool_name=tool_name,
+            arguments=arguments,
+        )
+
+        if not allowed:
+            denied_content = (
+                f"工具 {tool_name} 未执行："
+                "用户拒绝了本次操作授权。"
+            )
+
+            return {
+                "status": "denied",
+                "tool_call_id": tool_call.id,
+                "tool_name": tool_name,
+                "arguments": arguments,
+                "result": None,
+                "content": denied_content,
+            }
+
+    # 取出真正的 Python 函数
     tool_function = tool_info["function"]
 
-    # 使用 **arguments 将字典参数传入函数
+    # 真正执行工具
     result = tool_function(**arguments)
 
     return {
+        "status": "success",
         "tool_call_id": tool_call.id,
         "tool_name": tool_name,
         "arguments": arguments,

@@ -1,18 +1,31 @@
-from src.tool_registry import get_tool
-
-
-def check_permission(tool_name: str) -> bool:
+def request_permission(
+    tool_name: str,
+    arguments: dict,
+) -> bool:
     """
-    简单权限控制：
-    - 非危险工具直接允许
-    - 危险工具需要用户手动确认
+    在危险工具执行前请求用户授权。
+
+    返回：
+    True  -> 用户允许执行
+    False -> 用户拒绝执行
     """
-    tool_info = get_tool(tool_name)
 
-    if not tool_info["dangerous"]:
-        return True
+    print("\n检测到危险工具")
+    print("=" * 50)
+    print(f"工具名称：{tool_name}")
+    print(f"工具参数：{arguments}")
 
-    print(f"\n工具 {tool_name} 被标记为危险工具。")
-    answer = input("是否允许执行？输入 y 允许，其他内容拒绝：").strip().lower()
+    while True:
+        answer = input(
+            "是否允许执行该工具？[y/n]："
+        ).strip().lower()
 
-    return answer == "y"
+        if answer in {"y", "yes"}:
+            print("用户已授权执行。")
+            return True
+
+        if answer in {"n", "no"}:
+            print("用户已拒绝执行。")
+            return False
+
+        print("请输入 y 或 n。")
